@@ -1,0 +1,6 @@
+Flask
+folium
+shapely
+openrouteservice
+gunicorn
+flask-cors
