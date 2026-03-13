@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Mini Map VN - Precision Routing</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        body { margin: 0; font-family: 'Segoe UI', sans-serif; }
+        #map { height: 100vh; width: 100%; cursor: grab; }
+        .controls { position: absolute; top: 20px; left: 20px; z-index: 1000; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,0.2); width: 360px; }
+        .input-group { position: relative; margin-bottom: 12px; }
+        input { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; }
+        .sugg { position: absolute; top: 100%; left: 0; width: 100%; background: white; border: 1px solid #ddd; max-height: 200px; overflow-y: auto; z-index: 9999; border-radius: 0 0 6px 6px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        .item { padding: 10px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 13px; }
+        .item:hover { background: #f1f6ff; }
+        .btn-row { display: flex; gap: 8px; }
+        button { flex: 1; padding: 12px; border: none; border-radius: 6px; cursor: pointer; color: white; font-weight: bold; }
+        #info { margin-top: 15px; padding-top: 10px; border-top: 1px solid #eee; font-size: 14px; line-height: 1.5; }
+    </style>
+</head>
+<body>
+
+<div class="controls">
+    <div class="input-group">
+        <input id="from" placeholder="Điểm đi (Gõ xong nhấn Enter)..." autocomplete="off">
+        <div id="from-list" class="sugg"></div>
+    </div>
+    <div class="input-group">
+        <input id="to" placeholder="Điểm đến (Gõ xong nhấn Enter)..." autocomplete="off">
+        <div id="to-list" class="sugg"></div>
+    </div>
+    <div class="btn-row">
+        <button style="background:#1a73e8" onclick="route()">Tìm đường</button>
+        <button style="background:#ea4335" onclick="location.reload()">Reset</button>
+    </div>
+    <div id="info"></div>
+</div>
+
+<div id="map"></div>
+
+
+
+<script>
+    var map = L.map('map', {doubleClickZoom: false}).setView([10.7626, 106.6602], 14);
+    L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+        maxZoom: 20, subdomains:['mt0','mt1','mt2','mt3']
+    }).addTo(map);
+
+    var markers = { from: null, to: null }, coords = { from: null, to: null }, routeLine;
+    var currentFocus = 'from';
+
+    document.getElementById('from').onfocus = () => currentFocus = 'from';
+    document.getElementById('to').onfocus = () => currentFocus = 'to';
+
+    async function searchLocation(query, type) {
+        let res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&countrycodes=vn&limit=5`);
+        return await res.json();
+    }
+
+    function setupAutocomplete(inputId, listId, type) {
+        let input = document.getElementById(inputId), list = document.getElementById(listId), timer;
+        input.addEventListener("input", function() {
+            clearTimeout(timer);
+            if (this.value.length < 3) return;
+            timer = setTimeout(async () => {
+                let data = await searchLocation(this.value, type);
+                renderSugg(data, list, input, type);
+            }, 600);
+        });
+        input.addEventListener("keypress", async (e) => {
+            if (e.key === "Enter") {
+                clearTimeout(timer);
+                let data = await searchLocation(input.value, type);
+                renderSugg(data, list, input, type);
+            }
+        });
+    }
+
+    function renderSugg(data, list, input, type) {
+        list.innerHTML = "";
+        data.forEach(place => {
+            let div = document.createElement("div");
+            div.className = "item"; div.innerText = place.display_name;
+            div.onclick = () => {
+                input.value = place.display_name;
+                list.innerHTML = "";
+                updateMarker(type, [parseFloat(place.lat), parseFloat(place.lon)], place.display_name);
+            };
+            list.appendChild(div);
+        });
+    }
+
+    map.on('dblclick', async (e) => {
+        let latlng = [e.latlng.lat, e.latlng.lng];
+        let addr = await reverseGeocode(latlng[0], latlng[1]);
+        document.getElementById(currentFocus).value = addr;
+        updateMarker(currentFocus, latlng, addr);
+    });
+
+    async function reverseGeocode(lat, lon) {
+        let res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
+        let data = await res.json();
+        return data.display_name;
+    }
+
+    async function updateMarker(type, latlng, name) {
+        if(markers[type]) map.removeLayer(markers[type]);
+        markers[type] = L.marker(latlng, {draggable: true}).addTo(map)
+            .bindPopup(name).openPopup();
+        coords[type] = [latlng[1], latlng[0]];
+        map.setView(latlng, 17);
+        markers[type].on('dragend', async () => {
+            let pos = markers[type].getLatLng();
+            let newAddr = await reverseGeocode(pos.lat, pos.lng);
+            document.getElementById(type).value = newAddr;
+            coords[type] = [pos.lng, pos.lat];
+            markers[type].bindPopup(newAddr).openPopup();
+            if(coords.from && coords.to) route();
+        });
+        if(coords.from && coords.to) route();
+    }
+
+    async function route() {
+        if(!coords.from || !coords.to) return;
+        let url = `https://router.project-osrm.org/route/v1/driving/${coords.from.join(',')};${coords.to.join(',')}?overview=full&geometries=geojson`;
+        let res = await fetch(url);
+        let data = await res.json();
+        if(data.code !== "Ok") return;
+        if(routeLine) map.removeLayer(routeLine);
+        routeLine = L.polyline(data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]), {color: '#1a73e8', weight: 6}).addTo(map);
+        map.fitBounds(routeLine.getBounds(), {padding: [50, 50]});
+        
+        // TÍNH TOÁN THEO VẬN TỐC 20KM/H
+        let distanceKm = (data.routes[0].distance / 1000);
+        let timeMinutes = Math.round((distanceKm / 20) * 60);
+
+        document.getElementById("info").innerHTML = `
+            🚗 <b>${distanceKm.toFixed(2)} km</b><br>
+            ⏱️ <b>${timeMinutes} phút</b> <span style="font-size:11px; color:#666;">(vận tốc 20km/h)</span>
+        `;
+    }
+
+    setupAutocomplete("from", "from-list", "from");
+    setupAutocomplete("to", "to-list", "to");
+</script>
+</body>
+</html>
