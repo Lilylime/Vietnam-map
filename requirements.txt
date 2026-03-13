@@ -1,6 +1,0 @@
-Flask
-folium
-shapely
-openrouteservice
-flask-cors
-gunicorn
