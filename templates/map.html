@@ -2,78 +2,210 @@
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <title>Mini Map VN - Precision Routing</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mini Map VN - Smart Logistics</title>
+
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"/>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
     <style>
-        body { margin: 0; font-family: 'Segoe UI', sans-serif; }
-        #map { height: 100vh; width: 100%; cursor: grab; }
-        .controls { position: absolute; top: 20px; left: 20px; z-index: 1000; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,0.2); width: 360px; }
+        :root {
+            --primary-color: #2563eb;
+            --success-color: #059669;
+            --text-main: #1e293b;
+            --bg-card: rgba(255, 255, 255, 0.95);
+        }
+
+        body { margin:0; font-family: 'Inter', 'Segoe UI', sans-serif; color: var(--text-main); }
+        #map { height:100vh; width:100%; z-index: 1; }
+
+        .controls {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 1000;
+            background: var(--bg-card);
+            padding: 24px;
+            border-radius: 16px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+            width: 380px;
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+
+        h2 { margin: 0 0 20px 0; font-size: 1.25rem; font-weight: 700; color: var(--primary-color); display: flex; align-items: center; gap: 10px; }
+
         .input-group { position: relative; margin-bottom: 12px; }
-        input { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; }
-        .sugg { position: absolute; top: 100%; left: 0; width: 100%; background: white; border: 1px solid #ddd; max-height: 200px; overflow-y: auto; z-index: 9999; border-radius: 0 0 6px 6px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
-        .item { padding: 10px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 13px; }
-        .item:hover { background: #f1f6ff; }
-        .btn-row { display: flex; gap: 8px; }
-        button { flex: 1; padding: 12px; border: none; border-radius: 6px; cursor: pointer; color: white; font-weight: bold; }
-        #info { margin-top: 15px; padding-top: 10px; border-top: 1px solid #eee; font-size: 14px; line-height: 1.5; }
+        .input-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #94a3b8; }
+        
+        input {
+            width: 100%;
+            padding: 12px 12px 12px 40px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 14px;
+            box-sizing: border-box;
+            transition: all 0.2s;
+        }
+
+        input:focus { outline: none; border-color: var(--primary-color); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1); }
+
+        .sugg {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            width: 100%;
+            background: white;
+            border-radius: 8px;
+            margin-top: 4px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 9999;
+        }
+
+        .item { padding: 12px 16px; cursor: pointer; border-bottom: 1px solid #f1f5f9; font-size: 13px; }
+        .item:hover { background: #f8fafc; color: var(--primary-color); }
+
+        .btn-row { display: flex; gap: 8px; margin-top: 16px; }
+        button {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: 0.2s;
+        }
+        button:active { transform: scale(0.98); }
+
+        #info {
+            margin-top: 20px;
+            padding: 16px;
+            background: #f8fafc;
+            border-radius: 12px;
+            border: 1px solid #e2e8f0;
+            display: none;
+        }
+
+        .velocity-tag {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            font-size: 12px;
+            color: #64748b;
+        }
+
+        .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .info-label { font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; }
+        .info-value { font-size: 18px; font-weight: 700; display: block; }
+
+        #steps {
+            margin-top: 15px;
+            max-height: 180px;
+            overflow-y: auto;
+            padding-right: 5px;
+        }
+
+        .step { padding: 8px 0; border-bottom: 1px solid #f1f5f9; font-size: 12px; display: flex; gap: 10px; color: #475569; }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
     </style>
 </head>
+
 <body>
 
 <div class="controls">
+    <h2><i class="fas fa-map-marked-alt"></i> Mini Map VN</h2>
+
     <div class="input-group">
-        <input id="from" placeholder="Điểm đi (Gõ xong nhấn Enter)..." autocomplete="off">
+        <i class="fas fa-circle-dot input-icon" style="color: #22c55e;"></i>
+        <input id="from" placeholder="Điểm đi..." autocomplete="off">
         <div id="from-list" class="sugg"></div>
     </div>
+
     <div class="input-group">
-        <input id="to" placeholder="Điểm đến (Gõ xong nhấn Enter)..." autocomplete="off">
+        <i class="fas fa-location-pin input-icon" style="color: #ef4444;"></i>
+        <input id="to" placeholder="Điểm đến..." autocomplete="off">
         <div id="to-list" class="sugg"></div>
     </div>
+
     <div class="btn-row">
-        <button style="background:#1a73e8" onclick="route()">Tìm đường</button>
-        <button style="background:#ea4335" onclick="location.reload()">Reset</button>
+        <button style="background: var(--primary-color); color: white;" onclick="route()">
+            <i class="fas fa-directions"></i> Tìm đường
+        </button>
+        <button style="background: #f1f5f9; color: var(--text-main);" onclick="resetMap()">
+            <i class="fas fa-sync-alt"></i>
+        </button>
     </div>
-    <div id="info"></div>
+
+    <div id="info">
+        <div class="velocity-tag">
+            <span><i class="fas fa-tachometer-alt"></i> Vận tốc: <b>30 km/giờ</b></span>
+            <span style="color: var(--success-color); font-weight: 600;">Lộ trình tối ưu</span>
+        </div>
+        <div class="info-grid">
+            <div>
+                <span class="info-label">Quãng đường</span>
+                <span class="info-value" id="dist-val" style="color: var(--primary-color);">0 km</span>
+            </div>
+            <div>
+                <span class="info-label">Thời gian dự kiến</span>
+                <span class="info-value" id="time-val" style="color: var(--success-color);">0 phút</span>
+            </div>
+        </div>
+        <div id="steps"></div>
+    </div>
 </div>
 
 <div id="map"></div>
 
-
-
 <script>
-    var map = L.map('map', {doubleClickZoom: false}).setView([10.7626, 106.6602], 14);
+    var map = L.map('map', { doubleClickZoom: false }).setView([10.7626, 106.6602], 13);
+
     L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
-        maxZoom: 20, subdomains:['mt0','mt1','mt2','mt3']
+        maxZoom: 20,
+        subdomains: ['mt0', 'mt1', 'mt2', 'mt3']
     }).addTo(map);
 
-    var markers = { from: null, to: null }, coords = { from: null, to: null }, routeLine;
-    var currentFocus = 'from';
+    var markers = { from: null, to: null };
+    var coords = { from: null, to: null };
+    var routeLine = null;
+    var currentFocus = "from";
 
     document.getElementById('from').onfocus = () => currentFocus = 'from';
     document.getElementById('to').onfocus = () => currentFocus = 'to';
 
-    async function searchLocation(query, type) {
+    // Tìm địa chỉ từ tên
+    async function searchLocation(query) {
         let res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&countrycodes=vn&limit=5`);
         return await res.json();
     }
 
+    // Lấy địa chỉ từ tọa độ (Reverse Geocoding)
+    async function reverseGeocode(lat, lon) {
+        let res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
+        let data = await res.json();
+        return data.display_name;
+    }
+
     function setupAutocomplete(inputId, listId, type) {
-        let input = document.getElementById(inputId), list = document.getElementById(listId), timer;
+        let input = document.getElementById(inputId);
+        let list = document.getElementById(listId);
+        let timer;
         input.addEventListener("input", function() {
             clearTimeout(timer);
             if (this.value.length < 3) return;
             timer = setTimeout(async () => {
-                let data = await searchLocation(this.value, type);
+                let data = await searchLocation(this.value);
                 renderSugg(data, list, input, type);
-            }, 600);
-        });
-        input.addEventListener("keypress", async (e) => {
-            if (e.key === "Enter") {
-                clearTimeout(timer);
-                let data = await searchLocation(input.value, type);
-                renderSugg(data, list, input, type);
-            }
+            }, 500);
         });
     }
 
@@ -81,7 +213,8 @@
         list.innerHTML = "";
         data.forEach(place => {
             let div = document.createElement("div");
-            div.className = "item"; div.innerText = place.display_name;
+            div.className = "item";
+            div.innerHTML = `<i class="fas fa-map-marker-alt" style="color:#94a3b8; margin-right:8px;"></i> ${place.display_name}`;
             div.onclick = () => {
                 input.value = place.display_name;
                 list.innerHTML = "";
@@ -91,58 +224,80 @@
         });
     }
 
-    map.on('dblclick', async (e) => {
+    // Click đúp bản đồ để chọn điểm
+    map.on('dblclick', async e => {
         let latlng = [e.latlng.lat, e.latlng.lng];
         let addr = await reverseGeocode(latlng[0], latlng[1]);
         document.getElementById(currentFocus).value = addr;
         updateMarker(currentFocus, latlng, addr);
     });
 
-    async function reverseGeocode(lat, lon) {
-        let res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
-        let data = await res.json();
-        return data.display_name;
-    }
-
-    async function updateMarker(type, latlng, name) {
-        if(markers[type]) map.removeLayer(markers[type]);
-        markers[type] = L.marker(latlng, {draggable: true}).addTo(map)
-            .bindPopup(name).openPopup();
+    function updateMarker(type, latlng, name) {
+        if (markers[type]) map.removeLayer(markers[type]);
+        
+        // Tạo marker có thể kéo thả (draggable: true)
+        markers[type] = L.marker(latlng, { draggable: true }).addTo(map).bindPopup(name).openPopup();
         coords[type] = [latlng[1], latlng[0]];
-        map.setView(latlng, 17);
+        map.setView(latlng, 15);
+
+        // TỰ ĐỘNG CẬP NHẬT KHI KÉO MARKER
         markers[type].on('dragend', async () => {
             let pos = markers[type].getLatLng();
-            let newAddr = await reverseGeocode(pos.lat, pos.lng);
-            document.getElementById(type).value = newAddr;
             coords[type] = [pos.lng, pos.lat];
-            markers[type].bindPopup(newAddr).openPopup();
-            if(coords.from && coords.to) route();
+            
+            // Lấy địa chỉ mới từ vị trí vừa thả
+            let newAddr = await reverseGeocode(pos.lat, pos.lng);
+            
+            // Cập nhật ô Input và Popup
+            document.getElementById(type).value = newAddr;
+            markers[type].setPopupContent(newAddr).openPopup();
+
+            // Nếu đủ 2 điểm thì cập nhật lại đường đi ngay
+            if (coords.from && coords.to) route();
         });
-        if(coords.from && coords.to) route();
+
+        if (coords.from && coords.to) route();
     }
 
     async function route() {
-        if(!coords.from || !coords.to) return;
-        let url = `https://router.project-osrm.org/route/v1/driving/${coords.from.join(',')};${coords.to.join(',')}?overview=full&geometries=geojson`;
-        let res = await fetch(url);
-        let data = await res.json();
-        if(data.code !== "Ok") return;
-        if(routeLine) map.removeLayer(routeLine);
-        routeLine = L.polyline(data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]), {color: '#1a73e8', weight: 6}).addTo(map);
-        map.fitBounds(routeLine.getBounds(), {padding: [50, 50]});
+        if (!coords.from || !coords.to) return;
         
-        // TÍNH TOÁN THEO VẬN TỐC 20KM/H
-        let distanceKm = (data.routes[0].distance / 1000);
-        let timeMinutes = Math.round((distanceKm / 20) * 60);
+        let res = await fetch("/route", {
+            method: "POST",
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                start: [coords.from[1], coords.from[0]],
+                end: [coords.to[1], coords.to[0]],
+                vehicle: "truck"
+            })
+        });
 
-        document.getElementById("info").innerHTML = `
-            🚗 <b>${distanceKm.toFixed(2)} km</b><br>
-            ⏱️ <b>${timeMinutes} phút</b> <span style="font-size:11px; color:#666;">(vận tốc 20km/h)</span>
-        `;
+        let data = await res.json();
+        if (data.status !== "success") { alert("Không tìm được đường"); return; }
+
+        if (routeLine) map.removeLayer(routeLine);
+        routeLine = L.polyline(data.route, { color: '#2563eb', weight: 6, opacity: 0.8 }).addTo(map);
+        map.fitBounds(routeLine.getBounds(), { padding: [60, 60] });
+
+        // Hiển thị thông tin với vận tốc 30km/h
+        document.getElementById("info").style.display = "block";
+        document.getElementById("dist-val").innerText = data.distance + " km";
+        document.getElementById("time-val").innerText = Math.round((data.distance / 30) * 60) + " phút";
+
+        let stepsHTML = "";
+        if (data.steps) {
+            data.steps.forEach(s => { 
+                stepsHTML += `<div class="step"><i class="fas fa-chevron-right" style="margin-top:3px; opacity:0.4"></i> <span>${s}</span></div>`; 
+            });
+        }
+        document.getElementById("steps").innerHTML = stepsHTML;
     }
+
+    function resetMap() { location.reload(); }
 
     setupAutocomplete("from", "from-list", "from");
     setupAutocomplete("to", "to-list", "to");
 </script>
+
 </body>
 </html>
